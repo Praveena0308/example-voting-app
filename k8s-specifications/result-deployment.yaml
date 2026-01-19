@@ -17,6 +17,14 @@ spec:
       containers:
       - image: dockersamples/examplevotingapp_result
         name: result
+        env:
+        - name: POSTGRES_USER
+          value: "postgres"
+        - name: POSTGRES_PASSWORD
+          value: "StrongPassword123"
+        - name: POSTGRES_DB
+          value: "postgres"
+      
         ports:
         - containerPort: 80
           name: result

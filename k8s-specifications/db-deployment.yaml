@@ -1,3 +1,4 @@
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,9 +20,11 @@ spec:
         name: postgres
         env:
         - name: POSTGRES_USER
-          value: postgres
+          value: "postgres"
         - name: POSTGRES_PASSWORD
-          value: postgres
+          value: "StrongPassword123"
+        - name: POSTGRES_DB
+          value: "postgres"
         ports:
         - containerPort: 5432
           name: postgres
@@ -30,4 +33,22 @@ spec:
           name: db-data
       volumes:
       - name: db-data
-        emptyDir: {} 
+        persistentVolumeClaim:
+          claimName: db-pvc
+
+---
+
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: db-pvc
+spec:
+  storageClassName: standard
+  accessModes:  
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+
+
+

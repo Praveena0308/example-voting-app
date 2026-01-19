@@ -17,6 +17,11 @@ spec:
       containers:
       - image: dockersamples/examplevotingapp_vote
         name: vote
+        env:
+        - name: REDIS
+          value: redis
+          name: REDIS_PORT
+          value: "6379"
         ports:
         - containerPort: 80
           name: vote
