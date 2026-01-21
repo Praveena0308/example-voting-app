@@ -1,12 +1,10 @@
 
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   labels:
     app: db
   name: db
-  namespace: voting-app-dev
-  labels:
 spec:
   replicas: 1
   selector:

@@ -2,40 +2,29 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app: redis
-  name: redis
+    app: result
+  name: result
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: redis
+      app: result
   template:
     metadata:
       labels:
-        app: redis
+        app: result
     spec:
       containers:
-      - image: redis:alpine
-        name: redis
+      - image: dockersamples/examplevotingapp_result
+        name: result
+        env:
+        - name: POSTGRES_USER
+          value: "postgres"
+        - name: POSTGRES_PASSWORD
+          value: "StrongPassword123"
+        - name: POSTGRES_DB
+          value: "postgres"
+      
         ports:
-        - containerPort: 6379
-          name: redis
-        volumeMounts:
-        - mountPath: /data
-          name: redis-data
-      volumes:
-      - name: redis-data
-        persistentVolumeClaim:
-          claimName: redis-pvc
----
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: redis-pvc
-spec:
-  storageClassName: standard
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 5Gi
+        - containerPort: 80
+          name: result
