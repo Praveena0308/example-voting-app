@@ -8,8 +8,8 @@ metadata:
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   rules:
-  - host: vote.local  # Host rule
-    http:  # ← MUST be indented under host!
+  - host: vote.local  
+    http:  
       paths:
       - path: /vote
         pathType: Prefix
