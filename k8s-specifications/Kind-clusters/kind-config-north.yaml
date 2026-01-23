@@ -1,0 +1,22 @@
+# kind-config-multi.yaml - 3 Clusters, 3 Nodes Each
+# National Elections Multi-Region Setup
+
+# REGION 1: North Region Cluster
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: north-region
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 30000  # For NodePort access
+    hostPort: 30001
+    protocol: TCP
+  - containerPort: 30001
+    hostPort: 30002
+    protocol: TCP
+- role: worker  # Worker 1
+- role: worker  # Worker 2
+- role: worker  # Worker 3
+
+
+---

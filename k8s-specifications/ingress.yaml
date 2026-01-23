@@ -8,7 +8,11 @@ metadata:
     nginx.ingress.kubernetes.io/ssl-redirect: "false"
 spec:
   rules:
+<<<<<<< HEAD
   - host: vote.local  
+=======
+  - host: 
+>>>>>>> dbd6c55 (updated)
     http:  
       paths:
       - path: /vote

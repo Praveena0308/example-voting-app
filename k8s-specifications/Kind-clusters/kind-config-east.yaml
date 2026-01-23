@@ -1,0 +1,16 @@
+# REGION 3: East Region Cluster
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: east-region
+nodes:
+- role: control-plane
+  extraPortMappings:
+  - containerPort: 30000
+    hostPort: 30005
+    protocol: TCP
+  - containerPort: 30001
+    hostPort: 30006
+    protocol: TCP
+- role: worker
+- role: worker
+- role: worker
