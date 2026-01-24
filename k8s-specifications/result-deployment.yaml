@@ -4,8 +4,9 @@ metadata:
   labels:
     app: result
   name: result
+  namespace: results  # Changed from voting to results namespace
 spec:
-  replicas: 1
+  replicas: 2
   selector:
     matchLabels:
       app: result
@@ -14,17 +15,22 @@ spec:
       labels:
         app: result
     spec:
+      # Put result pods on result-processor nodes
+      nodeSelector:
+        role: result-processor
+      
       containers:
       - image: dockersamples/examplevotingapp_result
         name: result
         env:
+        - name: POSTGRES_HOST
+          value: "db.database.svc.cluster.local"
         - name: POSTGRES_USER
           value: "postgres"
         - name: POSTGRES_PASSWORD
           value: "StrongPassword123"
         - name: POSTGRES_DB
           value: "postgres"
-      
         ports:
         - containerPort: 80
           name: result
