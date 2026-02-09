@@ -3,7 +3,7 @@ pipeline {
     
     environment {
         DOCKER_REPO = 'pravee033'
-        GITOPS_REPO = 'https://github.com/praveena0308/voting-app-gitops.git'
+        GITOPS_REPO = 'https://github.com/praveena0308/example-voting-app.git'
         
         // Images you'll build - FIXED NAMES to match Docker Hub
         VOTE_IMAGE = "${DOCKER_REPO}/voting-vote:v${BUILD_NUMBER}"
@@ -90,7 +90,7 @@ pipeline {
         stage('Update GitOps Manifests') {
             steps {
                 withCredentials([usernamePassword(
-                    credentialsId: 'github-creds',  // ADD THIS! Your GitHub credentials
+                    credentialsId: 'git',  // ADD THIS! Your GitHub credentials
                     usernameVariable: 'GIT_USER',
                     passwordVariable: 'GIT_PASS'
                 )]) {
