@@ -1,0 +1,200 @@
+pipeline {
+    agent {
+        docker {
+            image 'maven:3.8-openjdk-17-alpine'
+            args '-v $HOME/.m2:/root/.m2'
+        }
+    }
+    
+    environment {
+        // ===== CONFIGURE THESE =====
+        SERVICE_NAME = 'vote-service'  // Change per service
+        DOCKER_REGISTRY = 'yourdockerhub'  // Your Docker Hub username
+        // ===========================
+        
+        // Auto-generated
+        VERSION = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+        BUILD_TAG = "${VERSION}-${BUILD_NUMBER}"
+        IMAGE_NAME = "${DOCKER_REGISTRY}/${SERVICE_NAME}:${BUILD_TAG}"
+        
+        // Branch-based environment
+        ENVIRONMENT = "${BRANCH_NAME == 'main' ? 'prod' : BRANCH_NAME == 'staging' ? 'staging' : 'dev'}"
+    }
+    
+    options {
+        timeout(time: 20, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        disableConcurrentBuilds()
+        ansiColor('xterm')
+    }
+    
+    stages {
+        // STAGE 1: INITIALIZE
+        stage('Initialize') {
+            steps {
+                echo "🚀 Building ${SERVICE_NAME} v${BUILD_TAG}"
+                echo "📌 Branch: ${BRANCH_NAME} → Environment: ${ENVIRONMENT}"
+                sh 'mvn -version'
+            }
+        }
+        
+        // STAGE 2: BUILD & TEST
+        stage('Build & Test') {
+            steps {
+                sh '''
+                mvn clean compile
+                mvn test
+                '''
+                
+                // Publish test results
+                junit '**/target/surefire-reports/*.xml'
+                
+                // Archive JAR
+                archiveArtifacts artifacts: 'target/*.jar'
+            }
+            
+            post {
+                always {
+                    // Generate coverage report
+                    sh 'mvn jacoco:report'
+                    publishHTML([
+                        reportDir: 'target/site/jacoco',
+                        reportFiles: 'index.html',
+                        reportName: 'Code Coverage'
+                    ])
+                }
+            }
+        }
+        
+        // STAGE 3: SECURITY CHECK
+        stage('Security Scan') {
+            steps {
+                // Dependency vulnerabilities
+                sh 'mvn org.owasp:dependency-check-maven:check'
+                
+                // SonarQube analysis (optional - remove if not using Sonar)
+                script {
+                    try {
+                        withSonarQubeEnv('SonarQube') {
+                            sh 'mvn sonar:sonar'
+                        }
+                    } catch (Exception e) {
+                        echo "SonarQube not available, continuing..."
+                    }
+                }
+            }
+        }
+        
+        // STAGE 4: DOCKER BUILD
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Build image
+                    docker.build(IMAGE_NAME)
+                    
+                    // Security scan (requires trivy installed on Jenkins)
+                    sh """
+                    if command -v trivy &> /dev/null; then
+                        trivy image --exit-code 1 --severity CRITICAL ${IMAGE_NAME} || echo "Critical vulnerabilities found"
+                    else
+                        echo "Trivy not installed, skipping image scan"
+                    fi
+                    """
+                }
+            }
+        }
+        
+        // STAGE 5: PUSH TO REGISTRY
+        stage('Push Image') {
+            steps {
+                script {
+                    // Login to Docker Hub
+                    withCredentials([usernamePassword(
+                        credentialsId: 'docker-hub-credentials',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        sh """
+                        echo ${DOCKER_PASS} | docker login -u ${DOCKER_USER} --password-stdin
+                        """
+                    }
+                    
+                    // Push image
+                    sh """
+                    docker push ${IMAGE_NAME}
+                    
+                    # Also tag as latest for dev branches
+                    if [ "${ENVIRONMENT}" = "dev" ]; then
+                        docker tag ${IMAGE_NAME} ${DOCKER_REGISTRY}/${SERVICE_NAME}:latest
+                        docker push ${DOCKER_REGISTRY}/${SERVICE_NAME}:latest
+                    fi
+                    """
+                    
+                    // Create deployment info
+                    writeFile file: 'deployment.info', text: """
+                    SERVICE=${SERVICE_NAME}
+                    IMAGE=${IMAGE_NAME}
+                    ENV=${ENVIRONMENT}
+                    BUILD=${BUILD_TAG}
+                    """
+                    
+                    archiveArtifacts artifacts: 'deployment.info'
+                }
+            }
+            
+            post {
+                always {
+                    // Cleanup
+                    sh 'docker logout || true'
+                }
+            }
+        }
+        
+        // STAGE 6: UPDATE GITOPS (For ArgoCD)
+        stage('Update GitOps Manifests') {
+            when {
+                expression { params.UPDATE_MANIFESTS == true }
+            }
+            steps {
+                script {
+                    // Clone manifests repo
+                    sshagent(['github-ssh-key']) {
+                        sh """
+                        git clone git@github.com:yourusername/voting-manifests.git
+                        cd voting-manifests
+                        
+                        # Update image tag
+                        if [ "${ENVIRONMENT}" = "dev" ]; then
+                            FILE="overlays/dev/kustomization.yaml"
+                        elif [ "${ENVIRONMENT}" = "staging" ]; then
+                            FILE="overlays/staging/kustomization.yaml"
+                        else
+                            FILE="overlays/prod/kustomization.yaml"
+                        fi
+                        
+                        sed -i "s|newTag:.*|newTag: ${BUILD_TAG}|g" \${FILE}
+                        
+                        # Commit and push
+                        git config user.email "jenkins@voting-app.com"
+                        git config user.name "Jenkins"
+                        git add .
+                        git commit -m "Deploy ${SERVICE_NAME}:${BUILD_TAG} to ${ENVIRONMENT}"
+                        git push origin main
+                        """
+                    }
+                    
+                    echo "✅ GitOps manifests updated for ArgoCD"
+                }
+            }
+        }
+    }
+    
+    
+    parameters {
+        booleanParam(
+            name: 'UPDATE_MANIFESTS',
+            defaultValue: false,
+            description: 'Update GitOps manifests for ArgoCD deployment'
+        )
+    }
+}
