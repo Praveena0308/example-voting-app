@@ -3,7 +3,7 @@ pipeline {
     
     environment {
         DOCKER_REPO = 'pravee033'
-        GITOPS_REPO = 'https://github.com/praveena0308/example-voting-app.git'
+        GITOPS_REPO = 'https://github.com/praveena0308/voting-app-gitOps.git'
         
         // Images you'll build - FIXED NAMES to match Docker Hub
         VOTE_IMAGE = "${DOCKER_REPO}/voting-vote:v${BUILD_NUMBER}"
