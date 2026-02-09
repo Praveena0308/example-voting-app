@@ -2,49 +2,51 @@ pipeline {
     agent any
     
     environment {
-        // ========== CONFIGURE THESE ==========
-        DOCKER_REGISTRY = 'docker.io'  // or 'ghcr.io' for GitHub Container Registry
-        DOCKER_USERNAME = credentials('docker-hub-username')  // Store in Jenkins credentials
-        DOCKER_PASSWORD = credentials('docker-hub-password')
-        DOCKER_REPO = 'yourdockerhubusername'  // Your Docker Hub username
-        APP_VERSION = "${BUILD_NUMBER}"
+        // Your Docker Hub username (from Jenkins credentials)
+        DOCKER_REPO = 'pravee033'  // CHANGE THIS to your actual username
         
-        // Voting App specific
-        VOTE_APP_IMAGE = "${DOCKER_REPO}/example-voting-app-vote:${APP_VERSION}"
-        RESULT_APP_IMAGE = "${DOCKER_REPO}/example-voting-app-result:${APP_VERSION}"
-        WORKER_APP_IMAGE = "${DOCKER_REPO}/example-voting-app-worker:${APP_VERSION}"
+        // GitOps repository URL
+        GITOPS_REPO = 'https://github.com/YOUR_USERNAME/voting-app-gitops.git'  // CHANGE THIS
         
-        // Kubernetes/ArgoCD
-        ARGOCD_SERVER = 'argocd.yourdomain.com'  // Your ArgoCD server URL
-        ARGOCD_APP_NAME = 'voting-app'
-        ARGOCD_PROJECT = 'default'
-        GITOPS_REPO = 'https://github.com/yourusername/voting-app-gitops.git'  // Your GitOps repo
+        // Image tags with build number
+        TAG = "build-${BUILD_NUMBER}"
+        VOTE_IMAGE = "${DOCKER_REPO}/example-voting-app-vote:${TAG}"
+        RESULT_IMAGE = "${DOCKER_REPO}/example-voting-app-result:${TAG}"
+        WORKER_IMAGE = "${DOCKER_REPO}/example-voting-app-worker:${TAG}"
     }
     
     stages {
-        // ========== STAGE 1: CHECKOUT CODE ==========
-        stage('Checkout Source Code') {
+        // ========== STAGE 1: CHECKOUT VOTING APP CODE ==========
+        stage('Checkout Voting App') {
             steps {
                 checkout([
                     $class: 'GitSCM',
                     branches: [[name: '*/main']],
                     userRemoteConfigs: [[
-                        url: 'https://github.com/Praveena0308/example-voting-app.git',
-                        credentialsId: 'github-credentials'  // Optional: if private repo
+                        url: 'https://github.com/Praveena0308/example-voting-app.git'
+                        // No credentials needed - it's a public repo
                     ]]
                 ])
-                sh 'ls -la'  // Verify checkout
+                sh 'echo "✅ Code checked out successfully"'
             }
         }
         
-        // ========== STAGE 2: LOGIN TO DOCKER REGISTRY ==========
+        // ========== STAGE 2: LOGIN TO DOCKER HUB ==========
         stage('Docker Login') {
             steps {
-                sh """
-                    docker login ${DOCKER_REGISTRY} \
-                    -u ${DOCKER_USERNAME} \
-                    -p ${DOCKER_PASSWORD}
-                """
+                // Using credentials from Jenkins UI
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'docker-hub-credentials',  // CHANGE to your credential ID
+                        usernameVariable: 'DOCKER_USERNAME',
+                        passwordVariable: 'DOCKER_PASSWORD'
+                    )
+                ]) {
+                    sh """
+                        echo "Logging into Docker Hub as \${DOCKER_USERNAME}..."
+                        docker login -u \${DOCKER_USERNAME} -p \${DOCKER_PASSWORD}
+                    """
+                }
             }
         }
         
@@ -54,124 +56,161 @@ pipeline {
                 stage('Build Vote App') {
                     steps {
                         dir('vote') {
-                            sh "docker build -t ${VOTE_APP_IMAGE} ."
+                            sh """
+                                echo "Building vote image..."
+                                docker build -t ${VOTE_IMAGE} .
+                            """
                         }
                     }
                 }
                 stage('Build Result App') {
                     steps {
                         dir('result') {
-                            sh "docker build -t ${RESULT_APP_IMAGE} ."
+                            sh """
+                                echo "Building result image..."
+                                docker build -t ${RESULT_IMAGE} .
+                            """
                         }
                     }
                 }
                 stage('Build Worker App') {
                     steps {
                         dir('worker') {
-                            sh "docker build -t ${WORKER_APP_IMAGE} ."
+                            sh """
+                                echo "Building worker image..."
+                                docker build -t ${WORKER_IMAGE} .
+                            """
                         }
                     }
                 }
             }
         }
         
-        // ========== STAGE 4: PUSH IMAGES ==========
+        // ========== STAGE 4: PUSH IMAGES TO DOCKER HUB ==========
         stage('Push Images') {
             parallel {
                 stage('Push Vote Image') {
                     steps {
-                        sh "docker push ${VOTE_APP_IMAGE}"
+                        sh """
+                            echo "Pushing ${VOTE_IMAGE}..."
+                            docker push ${VOTE_IMAGE}
+                        """
                     }
                 }
                 stage('Push Result Image') {
                     steps {
-                        sh "docker push ${RESULT_APP_IMAGE}"
+                        sh """
+                            echo "Pushing ${RESULT_IMAGE}..."
+                            docker push ${RESULT_IMAGE}
+                        """
                     }
                 }
                 stage('Push Worker Image') {
                     steps {
-                        sh "docker push ${WORKER_APP_IMAGE}"
+                        sh """
+                            echo "Pushing ${WORKER_IMAGE}..."
+                            docker push ${WORKER_IMAGE}
+                        """
                     }
                 }
             }
         }
         
-        // ========== STAGE 5: UPDATE GITOPS REPO ==========
-        stage('Update GitOps Repository') {
+        // ========== STAGE 5: UPDATE GITOPS REPOSITORY ==========
+        stage('Update GitOps Manifests') {
             steps {
-                script {
-                    // Clone your GitOps repo (where K8s manifests are stored)
-                    sh """
-                        git clone ${GITOPS_REPO} gitops-temp
-                        cd gitops-temp
-                        
-                        # Update image tags in Kubernetes manifests
-                        # Method 1: Using sed (simple replacement)
-                        sed -i 's|yourdockerhubusername/example-voting-app-vote:.*|${VOTE_APP_IMAGE}|g' k8s-manifests/vote-deployment.yaml
-                        sed -i 's|yourdockerhubusername/example-voting-app-result:.*|${RESULT_APP_IMAGE}|g' k8s-manifests/result-deployment.yaml
-                        sed -i 's|yourdockerhubusername/example-voting-app-worker:.*|${WORKER_APP_IMAGE}|g' k8s-manifests/worker-deployment.yaml
-                        
-                        # Commit and push the changes
-                        git config user.email "jenkins@example.com"
-                        git config user.name "Jenkins"
-                        git add .
-                        git commit -m "Update voting app images to version ${APP_VERSION}"
-                        git push origin main
-                        
-                        # Clean up
-                        cd ..
-                        rm -rf gitops-temp
-                    """
-                    
-                    // Alternative: Use ArgoCD CLI to sync (if you have argocd CLI installed)
-                    // sh "argocd app set ${ARGOCD_APP_NAME} --image ${VOTE_APP_IMAGE}"
-                    // sh "argocd app sync ${ARGOCD_APP_NAME}"
+                // Using Git credentials from Jenkins UI
+                withCredentials([
+                    usernamePassword(
+                        credentialsId: 'github-credentials',  // CHANGE to your git credential ID
+                        usernameVariable: 'GIT_USERNAME',
+                        passwordVariable: 'GIT_PASSWORD'
+                    )
+                ]) {
+                    script {
+                        sh """
+                            echo "Cloning GitOps repository..."
+                            # Clone using HTTPS with credentials
+                            git clone https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/YOUR_USERNAME/voting-app-gitops.git gitops-update
+                            
+                            cd gitops-update
+                            
+                            echo "Updating Kubernetes manifests with new image tags..."
+                            
+                            # Update vote-app.yaml
+                            if [ -f "vote-app.yaml" ]; then
+                                sed -i 's|dockersamples/examplevotingapp_vote:.*|${VOTE_IMAGE}|g' vote-app.yaml
+                                echo "✅ Updated vote-app.yaml"
+                            else
+                                echo "⚠️ vote-app.yaml not found"
+                            fi
+                            
+                            # Update result-app.yaml
+                            if [ -f "result-app.yaml" ]; then
+                                sed -i 's|dockersamples/examplevotingapp_result:.*|${RESULT_IMAGE}|g' result-app.yaml
+                                echo "✅ Updated result-app.yaml"
+                            else
+                                echo "⚠️ result-app.yaml not found"
+                            fi
+                            
+                            # Update worker-app.yaml
+                            if [ -f "worker-app.yaml" ]; then
+                                sed -i 's|dockersamples/examplevotingapp_worker:.*|${WORKER_IMAGE}|g' worker-app.yaml
+                                echo "✅ Updated worker-app.yaml"
+                            else
+                                echo "⚠️ worker-app.yaml not found"
+                            fi
+                            
+                            # Configure git
+                            git config user.email "jenkins@yourcompany.com"
+                            git config user.name "Jenkins CI"
+                            
+                            # Commit changes
+                            git add .
+                            git commit -m "Deploy voting app version ${BUILD_NUMBER}" || echo "No changes to commit"
+                            
+                            # Push changes
+                            git push origin main
+                            
+                            echo "✅ GitOps repository updated successfully!"
+                        """
+                    }
                 }
             }
         }
         
-        // ========== STAGE 6: TRIGGER ARGOCD SYNC ==========
-        stage('Trigger ArgoCD Sync') {
+        // ========== STAGE 6: NOTIFY SUCCESS ==========
+        stage('Deployment Complete') {
             steps {
-                script {
-                    // Method A: Webhook (Recommended - ArgoCD auto-syncs on repo change)
-                    echo "ArgoCD will automatically detect GitOps repo changes and sync"
-                    
-                    // Method B: Using curl to trigger ArgoCD webhook (if configured)
-                    // sh """
-                    //     curl -X POST ${ARGOCD_SERVER}/api/webhook \
-                    //     -H "Content-Type: application/json"
-                    // """
-                    
-                    // Method C: Using argocd CLI (requires CLI setup)
-                    // withCredentials([string(credentialsId: 'argocd-token', variable: 'ARGOCD_TOKEN')]) {
-                    //     sh """
-                    //         argocd login ${ARGOCD_SERVER} --auth-token ${ARGOCD_TOKEN}
-                    //         argocd app sync ${ARGOCD_APP_NAME}
-                    //         argocd app wait ${ARGOCD_APP_NAME} --health
-                    //     """
-                    // }
-                }
+                echo """
+                🎉 CI/CD Pipeline Successful!
+                
+                Docker Images Published:
+                - ${VOTE_IMAGE}
+                - ${RESULT_IMAGE}
+                - ${WORKER_IMAGE}
+                
+                GitOps repository updated.
+                ArgoCD will automatically deploy these new versions.
+                
+                You can check deployment status in ArgoCD UI.
+                """
             }
         }
     }
     
     // ========== POST-BUILD ACTIONS ==========
     post {
+        always {
+            echo "Cleaning up workspace..."
+            cleanWs()  // Clean Jenkins workspace
+        }
         success {
-            echo "✅ Pipeline succeeded! New images:"
-            echo "Vote: ${VOTE_APP_IMAGE}"
-            echo "Result: ${RESULT_APP_IMAGE}"
-            echo "Worker: ${WORKER_APP_IMAGE}"
-            echo "ArgoCD will deploy these to Kubernetes automatically"
+            echo "✅ Pipeline completed successfully!"
         }
         failure {
             echo "❌ Pipeline failed. Check logs above."
-        }
-        always {
-            // Clean up Docker credentials
-            sh 'docker logout'
-            cleanWs()  // Clean workspace
+            // You could add email/Slack notification here
         }
     }
 }
